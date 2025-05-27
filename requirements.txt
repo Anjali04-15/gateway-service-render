@@ -1,10 +1,10 @@
 fastapi==0.109.0
 uvicorn==0.27.0
+motor==3.3.2
+pymongo==4.5.0
 passlib==1.7.4
 python-jose==3.3.0
 httpx==0.26.0
 python-dotenv==1.0.0
 pydantic==2.5.3
 bcrypt==3.2.2
-pymongo==4.5.0
-motor==3.3.2
