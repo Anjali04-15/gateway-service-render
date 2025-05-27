@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Body
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 from typing import List
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -16,39 +16,38 @@ app = FastAPI()
 
 load_dotenv()
 
-# Configure CORS for production
 FRONTEND_URL = "https://stalefruitdetection.vercel.app"
 ALLOWED_ORIGINS = [
     FRONTEND_URL,
-    "http://localhost:3000",  # For local development
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # Allow all origins for now (development)
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# MongoDB setup (replace with your URI and DB details)
 MONGO_DETAILS = os.getenv("MONGO_URI")
 client = AsyncIOMotorClient(MONGO_DETAILS)
 db = client["StaleFruit"]
 users_collection = db["users"]
 history_collection = db["history"]
 
-# Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# JWT settings
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# Models
 class UserIn(BaseModel):
     username: str
+    email: EmailStr
+    password: str
+
+class SignInModel(BaseModel):
     email: EmailStr
     password: str
 
@@ -73,7 +72,6 @@ class PredictionHistory(BaseModel):
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="signin")
 
-# Utils
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -114,8 +112,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user is None:
         raise credentials_exception
     return user
-    
-# Signup endpoint
+
 @app.post("/signup", response_model=UserOut)
 async def signup(user: UserIn):
     if await get_user_by_email(user.email):
@@ -130,10 +127,9 @@ async def signup(user: UserIn):
     await users_collection.insert_one(user_obj)
     return {"username": user.username, "email": user.email}
 
-# Signin endpoint
 @app.post("/signin", response_model=Token)
-async def signin(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await authenticate_user(form_data.username, form_data.password)  # username is actually email here
+async def signin(credentials: SignInModel):
+    user = await authenticate_user(credentials.email, credentials.password)
     if not user:
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     
@@ -167,7 +163,6 @@ async def call_classification_model(image_bytes: bytes) -> bool:
 
     return predicted_label != "unknown"
 
-# Call Hugging Face hosted Swin Transformer model for freshness prediction
 async def call_swin_model(image_bytes: bytes):
     swin_api_url = "https://anjali04-15-swin-inference-api.hf.space/predictstatus"
     
@@ -197,7 +192,6 @@ async def predict(file: UploadFile = File(...), current_user=Depends(get_current
         try:
             image_bytes = await file.read()
 
-            # Step 1: Verify fruit/veg classification
             is_fruit = await call_classification_model(image_bytes)
             if not is_fruit:
                 return {
@@ -205,10 +199,8 @@ async def predict(file: UploadFile = File(...), current_user=Depends(get_current
                     "message": "Uploaded image is not a fruit or vegetable"
                 }
 
-            # Step 2: Get freshness prediction from Swin Transformer model
             swin_prediction = await call_swin_model(image_bytes)
 
-            # Extract fruit class from prediction label (e.g., "fresh_apple" -> "apple")
             fruit_class = None
             if swin_prediction and "label" in swin_prediction:
                 fruit_class = swin_prediction["label"].split("_")[-1]
@@ -235,7 +227,7 @@ async def predict(file: UploadFile = File(...), current_user=Depends(get_current
 async def save_prediction(history: PredictionHistory, current_user=Depends(get_current_user)):
     try:
         record = history.dict()
-        record['user_email'] = current_user['email']  # ✅ use email instead of username
+        record['user_email'] = current_user['email']
         result = await history_collection.insert_one(record)
         return {"status": "success", "id": str(result.inserted_id)}
     except Exception as e:
@@ -254,16 +246,14 @@ async def get_history(current_user=Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
 
-# Health check endpoint for Render
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "message": "StaleFruit API is running"}
 
-# Root endpoint
 @app.get("/")
 async def root():
     return {
         "message": "StaleFruit API",
         "documentation": f"{FRONTEND_URL}/docs",
-        "status": "running"
-    }
+        "status": "running"
+    }
