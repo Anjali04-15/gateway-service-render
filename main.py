@@ -255,5 +255,5 @@ async def root():
     return {
         "message": "StaleFruit API",
         "documentation": f"{FRONTEND_URL}/docs",
-        "status": "running"
-    }
+        "status": "running"
+    }
