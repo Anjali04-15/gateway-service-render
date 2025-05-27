@@ -9,3 +9,4 @@ python-dotenv==1.0.0
 pydantic==2.5.3
 bcrypt==3.2.2
 email-validator==2.0.0.post2
+python-multipart==0.0.6
