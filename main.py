@@ -6,15 +6,11 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 import httpx
-import io
-from io import BytesIO
 from datetime import datetime, timedelta
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 import traceback
-from huggingface_hub import InferenceClient
-from starlette.concurrency import run_in_threadpool
 
 app = FastAPI()
 
