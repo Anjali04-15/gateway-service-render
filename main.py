@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Body
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 from typing import List
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -20,9 +20,16 @@ app = FastAPI()
 
 load_dotenv()
 
+# Configure CORS for production
+FRONTEND_URL = "https://stalefruitdetection.vercel.app"
+ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    "http://localhost:3000",  # For local development
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for now (development)
+    allow_origins=ALLOWED_ORIGINS,  # Allow all origins for now (development)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,7 +75,6 @@ class PredictionHistory(BaseModel):
     confidence: float
     timestamp: datetime
 
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="signin")
 
 # Utils
@@ -112,7 +118,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user is None:
         raise credentials_exception
     return user
-
+    
 # Signup endpoint
 @app.post("/signup", response_model=UserOut)
 async def signup(user: UserIn):
@@ -140,28 +146,6 @@ async def signin(form_data: OAuth2PasswordRequestForm = Depends()):
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {"access_token": access_token, "token_type": "bearer"}
-
-# Dummy get_current_user implementation for demo (replace with OAuth2PasswordBearer)
-from fastapi.security import OAuth2PasswordBearer
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="signin")
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    user = await get_user_by_email(email)
-    if user is None:
-        raise credentials_exception
-    return user
 
 VALID_CLASSES = ['apple', 'banana', 'orange', 'tomato', 'bitter gourd', 'capsicum']
 
@@ -251,12 +235,6 @@ async def predict(file: UploadFile = File(...), current_user=Depends(get_current
             "message": f"Prediction failed: {str(e)}"
         }
 
-class PredictionHistory(BaseModel):
-    image_url: str
-    prediction: str
-    confidence: float
-    timestamp: datetime
-
 @app.post("/save_prediction")
 async def save_prediction(history: PredictionHistory, current_user=Depends(get_current_user)):
     try:
@@ -279,3 +257,17 @@ async def get_history(current_user=Depends(get_current_user)):
         return {"history": history}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
+
+# Health check endpoint for Render
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "message": "StaleFruit API is running"}
+
+# Root endpoint
+@app.get("/")
+async def root():
+    return {
+        "message": "StaleFruit API",
+        "documentation": f"{FRONTEND_URL}/docs",
+        "status": "running"
+    }
